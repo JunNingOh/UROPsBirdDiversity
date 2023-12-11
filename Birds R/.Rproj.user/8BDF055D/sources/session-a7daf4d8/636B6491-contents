@@ -1,0 +1,50 @@
+##Information
+#
+
+
+
+#Libraries imported
+library(readxl)
+library(ggplot2)
+library(reshape2)
+library(readr)
+library(dplyr)
+library(FD)
+#######Import Data########
+traits_data <- read_excel("Trait Data Cleaned.xlsx", 
+                          sheet = "AVONET2_eBird")
+#Removed non-measurement related categories from Avonet2_eBird data
+raw_bird_geog <- read.table("Occurrences_GlobalBirds_TDWG.txt", header=T,sep="")
+
+bird_geog_data <- acast(data = raw_bird_geog,
+                        formula = LEVEL_3_CO ~ SpecName,  
+                        fill = 0,
+                        fun.aggregate = length,
+                        value.var = "SpecName")
+removed_species=list()
+for (i in seq(length(traits_data$Species2))){
+  counting=0
+  for (k in colnames(bird_geog_data)){
+    #print(k)
+    if (k==traits_data$Species2[i]){
+      counting=counting+1
+      #print(k)
+    }
+  }
+  if (counting==0){
+    print(i)
+    append(list,traits_data$Species2[i])
+    traits_data=traits_data[-i,]
+  }
+}
+
+#####Visualise########
+trait_data_melt <- melt(traits_data, id.vars = c("Species2"))
+ggplot(data = trait_data_melt) +
+  geom_histogram(aes(x = value), stat = "count") +
+  facet_wrap(~variable, scales = "free")+
+  theme(axis.text.x = element_text(angle=45, hjust = 1))
+
+#####Functional Diversity########
+FD = dbFD(x=traits_data, a = bird_geog_data, w.abun = F, stand.x = T)
+
