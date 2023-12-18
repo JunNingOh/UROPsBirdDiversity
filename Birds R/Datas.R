@@ -13,10 +13,24 @@ library(FD)
 library(rWCVP)
 library(terra)
 library(sf)
-#######Import Data########
+####################Import Data#########################################
+#raw_bird_geog is a data with bird species matched with their
+#level 3 botanical countries (BC)
+
+#bird_geog_data is data of BC against species
+
+#traits_data contains 18 measured traits of bird species
+
+#we're focusing on frugivorous birds categorised in Trophic.Niche
+#as fruits making up 60% of their diet
+
+#Bird_data_BC stores values of interest
+########################################################################
 traits_data <- read_excel("Bird_traits_cleaned.xlsx", 
                           sheet = "AVONET1_BirdLife")
 traits_data=traits_data[,-1]
+
+frug_birds <- traits_data[traits_data$Trophic.Niche=='Frugivore',]
 #Removed non-measurement related categories from Avonet1_Birdlife data
 raw_bird_geog <- read.table("Occurrences_GlobalBirds_TDWG.txt", header=T,sep="")
 
@@ -26,21 +40,60 @@ bird_geog_data <- acast(data = raw_bird_geog,
                         fun.aggregate = length,
                         value.var = "SpecName")
 
+###Data matching###
+#proportion of bird with geog data with matching trait data
+raw_bird_geog$SpecName = as.factor(raw_bird_geog$SpecName)
 
-#####Visualise########
+match_birdtrait <- semi_join(raw_bird_geog,traits_data,by = c('SpecName'='Species1'))
+no_birdtrait <- anti_join(raw_bird_geog,traits_data,by = c('SpecName'='Species1'))
+match_birdtrait_byBC <- acast(data=match_birdtrait,
+                           formula = LEVEL_3_CO ~ SpecName,
+                           fun.aggregate = length,
+                           value.var = 'SpecName')
+
+
+
+
+####Species Richness###
+Bird_data_BC = data.frame(Initial=c(rowSums(bird_geog_data)))
+
+bot_countries <- st_read("lvl3/level3.shp")
+areas<-st_area(bot_countries)
+Bird_data_BC=cbind(Bird_data_BC,areas)
+Bird_data_BC$`Yes data` <- rowSums(match_birdtrait_byBC)
+Bird_data_BC$Percentage <- Bird_data_BC$`Yes data`/Bird_data_BC$Initial
+Bird_data_BC$areacode <- row.names(Bird_data_BC)
+Bird_data_BC$geometry <- st_geometry(bot_countries$geometry)
+
+Data_availability <- Bird_data_BC[,c('Percentage','geometry')]
+
+
+Data_availability_sf <- st_as_sf(Data_availability)
+ggplot() +
+  geom_sf(data = Data_availability_sf, aes(fill = Percentage), color = "white", size = 0.5) +
+  scale_fill_gradient2(low = "blue",mid = 'purple', high = "yellow",midpoint = 0.75)
+
+###Frugivore species richness###
+match_frug <- intersect(frug_birds$Species1,colnames(match_birdtrait_byBC))
+match_frug_byBC <- match_birdtrait_byBC[,c(match_frug)]
+
+Bird_data_BC$Frugivore=rowSums(match_frug_byBC)
+Bird_data_BC$`Density_Frug` = Bird_data_BC$Frugivore/Bird_data_BC$areas
+
+plot(st_as_sf(Bird_data_BC))
+#Low Frug density overall, differences are too small to quantify
+#Most recorded frugivore are in South American continent
+
+#####Visualise (Not Impt) ########
 trait_data_melt <- melt(traits_data, id.vars = c("Species1"))
 ggplot(data = trait_data_melt) +
   geom_histogram(aes(x = value), stat = "count") +
   facet_wrap(~variable, scales = "free")+
   theme(axis.text.x = element_text(angle=45, hjust = 1))
 
-####Taxonomic Diversity/Species Richness####
-Bird_data_BC = data.frame(Initial=c(rowSums(bird_geog_data)))
-
-bot_countries <- st_read("lvl3/level3.shp")
-areas<-st_area(bot_countries)
-Bird_data_BC=cbind(Bird_data_BC,areas)
-
+#####################################################
+#Scaling SPA. Disregards difference in SR due to other factors
+#Would species density really be any different?
 summary(finalbirdfit)
 #Call: S==d/(1+exp(-z*A+c))
 #converge:true
